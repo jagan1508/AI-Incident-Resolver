@@ -1,1 +1,2 @@
 kakfa-python
+psycopg2
