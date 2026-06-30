@@ -1,2 +1,3 @@
 kakfa-python
 psycopg2
+redis
