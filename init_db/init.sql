@@ -4,5 +4,10 @@ CREATE TABLE IF NOT EXISTS incidents (
     event_type TEXT NOT NULL,
     resource_name TEXT,
     raw_event JSONB,
-    created_at TIMESTAMPTZ DEFAULT now()
+    created_at TIMESTAMPTZ DEFAULT now(),
+    classification TEXT ,
+    decision TEXT,
+    reasoning TEXT,
+    actions_taken TEXT,
+    outcome TEXT
 );
