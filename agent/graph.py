@@ -4,17 +4,25 @@ from dotenv import load_dotenv
 import os
 from IPython.display import Image, display
 from state import State
+from langchain_core.prompts import ChatPromptTemplate
+from prompts import classification_prompt
+from output import Category
 
 load_dotenv()
 
-model=ChatGroq(model="openai/gpt-oss-20b")
 
 from langgraph.graph import START, END, StateGraph
 
 def classify(state: State)-> dict:
-    return {"classification": "container_failure"}
+    model=ChatGroq(model="qwen/qwen3.6-27b",temperature=0)
+    structured_model=model.with_structured_output(Category)
+    chain = classification_prompt | structured_model
+    result=chain.invoke({"event": state["raw_event"]})
+    
+    return {"classification": result.category}
 
 def get_history(state: State) -> dict:
+    #print(state)
     return {"history": [], "history_summary": "No past incidents found."}
 
 def inspect(state: State) -> dict:
@@ -59,6 +67,52 @@ builder.add_edge("auto_remediate","outcome")
 builder.add_edge("outcome",END)
 
 graph=builder.compile()
+
+##For testing
+"""initial_state = {
+    "incident_id": 1,
+    "fingerprint": "cpu_spike:payment-svc",
+    "event_type": "cpu_spike",
+    "resource_name": "payment-svc",
+    "raw_event": {"type": "cpu_spike", "resource": "payment-svc", "fingerprint": "cpu_spike:payment-svc"},
+    "created_at": "2026-06-30 12:00:00",
+    "is_duplicate": False,
+    "history": None,
+    "history_summary": None,
+    "classification": None,
+    "decision": None,
+    "reasoning": None,
+    "pod_status": None,
+    "restart_count": None,
+    "recent_k8s_events": None,
+    "cluster_summary": None,
+    "action_taken": None,
+    "outcome": None,
+    "confidence": None,
+    "recommended_action": None
+}"""
+"""initial_state = {
+    "incident_id": 1,
+    "fingerprint": "pod_crash:checkout-svc",
+    "event_type": "pod_crash",
+    "resource_name": "checkout-svc",
+    "raw_event": {"type": "pod_crash", "resource": "checkout-svc", "fingerprint": "pod_crash:checkout-svc"},
+    "created_at": "2026-06-30 12:00:00",
+    "is_duplicate": False,
+    "history": None,
+    "history_summary": None,
+    "classification": None,
+    "decision": None,
+    "reasoning": None,
+    "pod_status": None,
+    "restart_count": None,
+    "recent_k8s_events": None,
+    "cluster_summary": None,
+    "action_taken": None,
+    "outcome": None,
+    "confidence": None,
+    "recommended_action": None
+result =graph.invoke(initial_state)"""
 
 
 ##Visualize the graph
