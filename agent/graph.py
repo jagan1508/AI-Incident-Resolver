@@ -1,6 +1,8 @@
 from langchain_groq import ChatGroq
 from langgraph.graph import START, END, StateGraph
 from dotenv import load_dotenv
+import psycopg2
+
 import os
 from IPython.display import Image, display
 from state import State
@@ -22,8 +24,36 @@ def classify(state: State)-> dict:
     return {"classification": result.category}
 
 def get_history(state: State) -> dict:
-    #print(state)
-    return {"history": [], "history_summary": "No past incidents found."}
+    print(state)
+    fingerprint=state["fingerprint"]
+    classification=state["classification"]
+    with psycopg2.connect(host="localhost",database="incident_db", user="postgres" , password="password") as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT id, event_type, classification, decision, reasoning, actions_taken, outcome, created_at\
+                            FROM incidents\
+                            WHERE fingerprint = %s\
+                            ORDER BY created_at DESC\
+                            LIMIT 5;",(fingerprint,))##need to add another check with where 
+            rows=cursor.fetchall()
+    if rows==[]:
+        history_summary="No past incidents found for this fingerprint in the same category."
+    else:
+        lines=[]
+        for i,row in enumerate(rows,1):
+            line=(
+            f"{i}. [{row[7]}] "
+            f"event={row[1]}, "
+            f"classification={row[2]}, "
+            f"decision={row[3]}, "
+            f"action={row[5]}, "
+            f"outcome={row[6]}"
+            )
+        lines.append(line)
+        history_summary=f"There are {len(rows)} past incidents found:\n"+"\n".join(lines)
+        ##print(history_summary)
+        
+    
+    return {"history": rows, "history_summary": history_summary}
 
 def inspect(state: State) -> dict:
    return {"pod_status": "CrashLoopBackOff", "restart_count": 3,"recent_k8s_events": [], "cluster_summary": "Pod is crash looping."}
@@ -69,7 +99,7 @@ builder.add_edge("outcome",END)
 graph=builder.compile()
 
 ##For testing
-"""initial_state = {
+initial_state = {
     "incident_id": 1,
     "fingerprint": "cpu_spike:payment-svc",
     "event_type": "cpu_spike",
@@ -90,7 +120,7 @@ graph=builder.compile()
     "outcome": None,
     "confidence": None,
     "recommended_action": None
-}"""
+}
 """initial_state = {
     "incident_id": 1,
     "fingerprint": "pod_crash:checkout-svc",
@@ -111,8 +141,8 @@ graph=builder.compile()
     "action_taken": None,
     "outcome": None,
     "confidence": None,
-    "recommended_action": None
-result =graph.invoke(initial_state)"""
+    "recommended_action": None"""
+result =graph.invoke(initial_state)
 
 
 ##Visualize the graph
