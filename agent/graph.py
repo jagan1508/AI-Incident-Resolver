@@ -2,6 +2,8 @@ from langchain_groq import ChatGroq
 from langgraph.graph import START, END, StateGraph
 from dotenv import load_dotenv
 import psycopg2
+from kubernetes import client, config
+
 
 import os
 from IPython.display import Image, display
@@ -9,6 +11,7 @@ from state import State
 from langchain_core.prompts import ChatPromptTemplate
 from prompts import classification_prompt
 from output import Category
+
 
 load_dotenv()
 
@@ -33,7 +36,7 @@ def get_history(state: State) -> dict:
                             FROM incidents\
                             WHERE fingerprint = %s\
                             ORDER BY created_at DESC\
-                            LIMIT 5;",(fingerprint,))##need to add another check with where 
+                            LIMIT 5;",(fingerprint,))##need to add another check with where for classification as i passed it for testing initially now
             rows=cursor.fetchall()
     if rows==[]:
         history_summary="No past incidents found for this fingerprint in the same category."
@@ -56,7 +59,109 @@ def get_history(state: State) -> dict:
     return {"history": rows, "history_summary": history_summary}
 
 def inspect(state: State) -> dict:
-   return {"pod_status": "CrashLoopBackOff", "restart_count": 3,"recent_k8s_events": [], "cluster_summary": "Pod is crash looping."}
+    config.load_kube_config()
+    apps_v1 = client.AppsV1Api()
+    core_v1 = client.CoreV1Api()
+    custom_api = client.CustomObjectsApi()
+    deployment_found = False
+    ret=apps_v1.list_namespaced_deployment(namespace="infrastructure-1")
+    for i in ret.items:
+        if i.metadata.name==state["resource_name"]:
+            deployment_found = True
+            replicas        = i.status.replicas or 0
+            ready_replicas  = i.status.ready_replicas or 0
+            available       = i.status.available_replicas or 0
+            unavailable     = i.status.unavailable_replicas or 0
+            strategy_type   = i.spec.strategy.type or "unknown"
+            strategy_details = i.spec.strategy or {}
+            container = i.spec.template.spec.containers[0]
+            if container.resources.limits:
+                cpu_limit    = container.resources.limits.get("cpu", "unknown")
+                memory_limit = container.resources.limits.get("memory", "unknown")
+            if container.resources.requests:
+                cpu_request    = container.resources.requests.get("cpu", "unknown")
+                memory_request = container.resources.requests.get("memory", "unknown")
+            break
+    if not deployment_found:
+        return {
+                "pod_status": "unknown",
+                "restart_count": 0,
+                "recent_k8s_events": [],
+                "cluster_summary": f"Deployment '{state['resource_name']}' not found in namespace infrastructure-1."
+            }
+    try:
+        pods = core_v1.list_namespaced_pod(
+            namespace="infrastructure-1",
+            label_selector=f"name={state['resource_name']}"
+            )
+            
+        pod_statuses = []
+        total_restarts = 0
+        for pod in pods.items:
+            phase = pod.status.phase or "unknown"
+            pod_restart_count = 0
+            container_statuses = pod.status.container_statuses
+            if container_statuses:
+                cs = container_statuses[0]
+                pod_restart_count = cs.restart_count or 0
+                total_restarts += pod_restart_count
+            pod_statuses.append({
+                    "name": pod.metadata.name,
+                    "phase": phase,
+                    "restarts": pod_restart_count,
+                    "waiting_reason": cs.state.waiting.reason if cs.state.waiting else None})
+        pod_status_summary = ", ".join([f"Pod Name:{p['name']}({p['phase']}, restarts={p['restarts']},waiting reason={p['waiting_reason']})" for p in pod_statuses])
+        pod_status=pod_status_summary
+
+    except Exception as e:
+        pass
+    cpu_usage = memory_usage = "unavailable"
+    try:
+        metrics = custom_api.list_namespaced_custom_object(
+                group="metrics.k8s.io",
+                version="v1beta1",
+                namespace="infrastructure-1",
+                plural="pods"
+            )
+        for item in metrics.get("items", []):
+            if item["metadata"]["name"].startswith(state['resource_name']):
+                containers = item.get("containers", [])
+                if containers:
+                    cpu_usage    = containers[0]["usage"].get("cpu", "unavailable")
+                    memory_usage = containers[0]["usage"].get("memory", "unavailable")
+                break
+    except Exception:
+        pass
+    cluster_summary = f"""
+            Deployment: {state['resource_name']} | Namespace: infrastructure-1
+            Replicas: {ready_replicas}/{replicas} ready | Available: {available} | Unavailable: {unavailable}
+            Strategy: {strategy_type} | Strategy details: {strategy_details})
+            CPU  → Limit: {cpu_limit} | Request: {cpu_request} | Usage: {cpu_usage}
+            Memory → Limit: {memory_limit} | Request: {memory_request} | Usage: {memory_usage}
+            """.strip()
+    #print(f"Cluster Summary:\n{cluster_summary}")
+    #print(f"Pod Status Summary:\n{pod_status}")
+    #print(f"Total Restarts: {total_restarts}")
+    recent_events = []
+    try:
+        for pod in pod_statuses:
+            events = core_v1.list_namespaced_event(
+            namespace="infrastructure-1",
+            field_selector=f"involvedObject.name={pod['name']}"  
+        )
+            for event in events.items:
+                if event.type == "Warning":
+                    recent_events.append({
+                        "reason":    event.reason,
+                        "message":   event.message,
+                        "type":      event.type,
+                        "count":     event.count or 1,
+                        "timestamp": str(event.last_timestamp)
+                    })
+    except Exception as e:
+        pass
+
+    return {"pod_status": pod_status, "restart_count": total_restarts, "recent_k8s_events": recent_events, "cluster_summary": cluster_summary}
 
 def decide(state: State) -> dict:
     return {"decision": "escalate", "reasoning": "dummy reasoning", "confidence": "high", "recommended_action": "restart_pod"}
@@ -99,7 +204,7 @@ builder.add_edge("outcome",END)
 graph=builder.compile()
 
 ##For testing
-initial_state = {
+"""initial_state = {
     "incident_id": 1,
     "fingerprint": "cpu_spike:payment-svc",
     "event_type": "cpu_spike",
@@ -120,7 +225,7 @@ initial_state = {
     "outcome": None,
     "confidence": None,
     "recommended_action": None
-}
+}"""
 """initial_state = {
     "incident_id": 1,
     "fingerprint": "pod_crash:checkout-svc",
@@ -141,9 +246,9 @@ initial_state = {
     "action_taken": None,
     "outcome": None,
     "confidence": None,
-    "recommended_action": None"""
-result =graph.invoke(initial_state)
-
+    "recommended_action": None}
+#result =graph.invoke(initial_state)"""
+#a=inspect(initial_state)
 
 ##Visualize the graph
 '''png_data = graph.get_graph().draw_mermaid_png()

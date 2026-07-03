@@ -22,6 +22,7 @@ class State(TypedDict):
     restart_count: Optional[int]      
     recent_k8s_events: Optional[list] 
     cluster_summary: Optional[str] 
+    
     recommended_action: Optional[str]
     confidence: Optional[str]
     
