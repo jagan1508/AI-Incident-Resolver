@@ -2,7 +2,7 @@ from typing import Optional
 from typing_extensions import TypedDict
 
 class State(TypedDict):
-    incident_id: Optional[int]
+    incident_id: int
 
     fingerprint: str
     event_type: str

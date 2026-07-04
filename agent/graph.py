@@ -23,13 +23,14 @@ def classify(state: State)-> dict:
     structured_model=model.with_structured_output(Category)
     chain = classification_prompt | structured_model
     result=chain.invoke({"event": state["raw_event"]})
+    print(f"Classification result: {result.category}")
     
     return {"classification": result.category}
 
 def get_history(state: State) -> dict:
     print(state)
     fingerprint=state["fingerprint"]
-    classification=state["classification"]
+    classification=state["classification"] ##to use this in select query to filter by classification as well
     with psycopg2.connect(host="localhost",database="incident_db", user="postgres" , password="password") as conn:
         with conn.cursor() as cursor:
             cursor.execute("SELECT id, event_type, classification, decision, reasoning, actions_taken, outcome, created_at\
@@ -166,14 +167,32 @@ def inspect(state: State) -> dict:
 def decide(state: State) -> dict:
     return {"decision": "escalate", "reasoning": "dummy reasoning", "confidence": "high", "recommended_action": "restart_pod"}
 
-def escalate(state: State)-> dict:
+def escalate(state: State)-> dict:  
     return {"action_taken": "escalated", "outcome": "pending"}
 
 def auto_remediate(state: State)-> dict:
     return {"action_taken": "restart_pod", "outcome": "pending"}
 
 def log_outcome(state: State)-> dict:
+    incident_id = state["incident_id"]
+    classification = state["classification"]
+    decision = state["decision"]
+    reasoning = state["reasoning"]
+    action_taken = state["action_taken"]
+    outcome = state["outcome"]
     print(f"Logging outcome: {state['decision']} - {state['outcome']}")
+    with psycopg2.connect(host="localhost",database="incident_db", user="postgres" , password="password") as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("UPDATE incidents SET\
+                                classification = %s,\
+                                decision = %s,\
+                                reasoning = %s,\
+                                actions_taken = %s,\
+                                outcome = %s\
+                                WHERE id = %s",
+                                (classification, decision, reasoning, action_taken, outcome, incident_id))
+                conn.commit()
+    print(f"Outcome logged for incident {incident_id}: decision={decision}, reasoning={reasoning}, action_taken={action_taken}, outcome={outcome}")
     return {} 
 
 def route_decision(state: State)->str:
@@ -205,7 +224,7 @@ graph=builder.compile()
 
 ##For testing
 """initial_state = {
-    "incident_id": 1,
+    "incident_id": 2,
     "fingerprint": "cpu_spike:payment-svc",
     "event_type": "cpu_spike",
     "resource_name": "payment-svc",
@@ -227,7 +246,7 @@ graph=builder.compile()
     "recommended_action": None
 }"""
 """initial_state = {
-    "incident_id": 1,
+    "incident_id": 2,
     "fingerprint": "pod_crash:checkout-svc",
     "event_type": "pod_crash",
     "resource_name": "checkout-svc",
@@ -246,8 +265,8 @@ graph=builder.compile()
     "action_taken": None,
     "outcome": None,
     "confidence": None,
-    "recommended_action": None}
-#result =graph.invoke(initial_state)"""
+    "recommended_action": None}"""
+result =graph.invoke(initial_state)
 #a=inspect(initial_state)
 
 ##Visualize the graph
