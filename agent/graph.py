@@ -9,8 +9,8 @@ import os
 from IPython.display import Image, display
 from state import State
 from langchain_core.prompts import ChatPromptTemplate
-from prompts import classification_prompt
-from output import Category
+from prompts import classification_prompt,decision_prompt
+from output import Category,Decision
 
 
 load_dotenv()
@@ -165,9 +165,32 @@ def inspect(state: State) -> dict:
     return {"pod_status": pod_status, "restart_count": total_restarts, "recent_k8s_events": recent_events, "cluster_summary": cluster_summary}
 
 def decide(state: State) -> dict:
-    return {"decision": "escalate", "reasoning": "dummy reasoning", "confidence": "high", "recommended_action": "restart_pod"}
+    model=ChatGroq(model="llama-3.3-70b-versatile",temperature=0)
+    structured_model=model.with_structured_output(Decision)
+    chain = decision_prompt | structured_model
+    result=chain.invoke({
+        "event": state["raw_event"],
+        "classification": state["classification"],
+        "cluster_info": state["cluster_summary"],
+        "history": state["history_summary"],
+        "pod_status": state["pod_status"],
+        "restart_count": state["restart_count"],
+        "recent_k8s_events": state["recent_k8s_events"]
+    })
+    """print("--------------------------")
+    print(f"Decision: {result.decision}")
+    print(f"Reasoning: {result.reasoning}")
+    print(f"Recommended Action: {result.recommended_action}")
+    print(f"Confidence: {result.confidence}")"""
+    return {
+        "decision": result.decision,
+        "reasoning": result.reasoning,
+        "recommended_action": result.recommended_action,
+        "confidence": result.confidence
+    }
 
 def escalate(state: State)-> dict:  
+    print(f"Escalating incident {state['incident_id']} for human intervention.")
     return {"action_taken": "escalated", "outcome": "pending"}
 
 def auto_remediate(state: State)-> dict:
@@ -223,7 +246,7 @@ builder.add_edge("outcome",END)
 graph=builder.compile()
 
 ##For testing
-"""initial_state = {
+initial_state = {
     "incident_id": 2,
     "fingerprint": "cpu_spike:payment-svc",
     "event_type": "cpu_spike",
@@ -244,7 +267,7 @@ graph=builder.compile()
     "outcome": None,
     "confidence": None,
     "recommended_action": None
-}"""
+}
 """initial_state = {
     "incident_id": 2,
     "fingerprint": "pod_crash:checkout-svc",
