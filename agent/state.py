@@ -18,7 +18,8 @@ class State(TypedDict):
     decision: Optional[str]
     reasoning: Optional[str]
     
-    pod_status: Optional[str]         
+    pod_status: Optional[str] 
+    pod_statuses: Optional[list]            
     restart_count: Optional[int]      
     recent_k8s_events: Optional[list] 
     cluster_summary: Optional[str] 

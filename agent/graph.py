@@ -23,8 +23,7 @@ def classify(state: State)-> dict:
     structured_model=model.with_structured_output(Category)
     chain = classification_prompt | structured_model
     result=chain.invoke({"event": state["raw_event"]})
-    print(f"Classification result: {result.category}")
-    
+    print(f"Classification result: {result.category}")  
     return {"classification": result.category}
 
 def get_history(state: State) -> dict:
@@ -162,9 +161,11 @@ def inspect(state: State) -> dict:
     except Exception as e:
         pass
 
-    return {"pod_status": pod_status, "restart_count": total_restarts, "recent_k8s_events": recent_events, "cluster_summary": cluster_summary}
+    return {"pod_statuses": pod_statuses, "pod_status": pod_status, "restart_count": total_restarts, "recent_k8s_events": recent_events, "cluster_summary": cluster_summary}
 
 def decide(state: State) -> dict:
+    print("--------------------------")
+    print(state['pod_statuses'])
     model=ChatGroq(model="llama-3.3-70b-versatile",temperature=0)
     structured_model=model.with_structured_output(Decision)
     chain = decision_prompt | structured_model
@@ -191,9 +192,52 @@ def decide(state: State) -> dict:
 
 def escalate(state: State)-> dict:  
     print(f"Escalating incident {state['incident_id']} for human intervention.")
+    
     return {"action_taken": "escalated", "outcome": "pending"}
 
 def auto_remediate(state: State)-> dict:
+    recommended_action = state["recommended_action"]
+    print(f"Auto-remediating incident {state['incident_id']} with action: {recommended_action}")
+    pod_statuses=state["pod_statuses"] or []
+    config.load_kube_config()
+    apps_v1 = client.AppsV1Api()
+    core_v1 = client.CoreV1Api()
+    if recommended_action == "restart_pod":
+        unhealthy_pods = [
+            p for p in pod_statuses
+            if p["phase"] != "Running" or p["waiting_reason"] is not None
+        ]
+        if not unhealthy_pods:
+            return {
+                "action_taken": "no_action_self_healed",
+                "outcome": "resolved"
+            }
+        for pod in unhealthy_pods:
+            pod_name = pod["name"]
+            print(f"Restarting pod {pod_name}...")
+            try:
+                core_v1.delete_namespaced_pod(
+                    name=pod_name,
+                    namespace="infrastructure-1",
+                    grace_period_seconds=0
+                )
+                action_taken = f"restarted {len(unhealthy_pods)} unhealthy pod(s): {[p['name'] for p in unhealthy_pods]}"
+                print(f"Pod {pod_name} restarted successfully.")
+            except Exception as e:
+                print(f"Failed to restart pod {pod_name}: {e}")
+                action_taken = f"failed to restart pod {pod_name}: {e}"
+        return {
+            "action_taken": action_taken,
+            "outcome": "pending"
+        }    
+    elif recommended_action == "scale_up":
+        print(f"Scaling up deployment {state['resource_name']}...")
+    elif recommended_action == "rollback_deployment":
+        print(f"Rolling back deployment {state['resource_name']}...")
+    elif recommended_action == "check_network":
+        print(f"Checking network connectivity for {state['resource_name']}...")
+    else:
+        print(f"Investigating incident {state['incident_id']}...")
     return {"action_taken": "restart_pod", "outcome": "pending"}
 
 def log_outcome(state: State)-> dict:
