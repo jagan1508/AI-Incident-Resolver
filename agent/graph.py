@@ -212,6 +212,7 @@ def auto_remediate(state: State)-> dict:
                 "action_taken": "no_action_self_healed",
                 "outcome": "resolved"
             }
+        actions=[]
         for pod in unhealthy_pods:
             pod_name = pod["name"]
             print(f"Restarting pod {pod_name}...")
@@ -226,19 +227,78 @@ def auto_remediate(state: State)-> dict:
             except Exception as e:
                 print(f"Failed to restart pod {pod_name}: {e}")
                 action_taken = f"failed to restart pod {pod_name}: {e}"
+            actions.append(action_taken)
         return {
-            "action_taken": action_taken,
+            "action_taken": ", ".join(actions),
             "outcome": "pending"
         }    
     elif recommended_action == "scale_up":
         print(f"Scaling up deployment {state['resource_name']}...")
+        resource_name = state["resource_name"]
+        try:
+            replicas=apps_v1.read_namespaced_deployment_scale(name=resource_name, namespace="infrastructure-1").spec.replicas
+            apps_v1.patch_namespaced_deployment_scale(name=resource_name, namespace="infrastructure-1", 
+                                                    body={"spec": {"replicas": replicas + 1}})
+            print(f"Deployment {resource_name} scaled up successfully.")
+            action_taken = f"scaled up deployment {resource_name} from {replicas} to {replicas + 1} replicas"
+        except Exception as e:
+            print(f"Failed to scale up deployment {resource_name}: {e}")
+            action_taken = f"failed to scale up deployment {resource_name}: {e}"
+        return {"action_taken": action_taken, "outcome": "pending"}
     elif recommended_action == "rollback_deployment":
         print(f"Rolling back deployment {state['resource_name']}...")
-    elif recommended_action == "check_network":
-        print(f"Checking network connectivity for {state['resource_name']}...")
+        try:
+            all_rn = apps_v1.list_namespaced_replica_set(namespace="infrastructure-1")
+            selected_rn = [
+                rn for rn in all_rn.items
+                if rn.metadata.owner_references and any(ref.name == resource_name for ref in rn.metadata.owner_references)
+            ]
+            if len(selected_rn) < 2:
+                print(f"No previous replica set found for deployment {state['resource_name']}. Rollback not possible.")
+                return {"action_taken": f"rollback_not_possible: no previous replica set found:{state['resource_name']}", "outcome": "pending"}
+            selected_rn.sort(
+                    key=lambda rs: int(
+                        rs.metadata.annotations.get(
+                            "deployment.kubernetes.io/revision", "0"
+                        )
+                    )
+                )
+            previous_rs=selected_rn[-2]
+            resource_name = state["resource_name"]
+            previous_image = previous_rs.spec.template.spec.containers[0].image
+            previous_revision = previous_rs.metadata.annotations.get(
+                    "deployment.kubernetes.io/revision", "unknown"
+                )
+            print(f"Rolling back {resource_name} to revision {previous_revision} (image: {previous_image})")
+            apps_v1.patch_namespaced_deployment(
+                name=resource_name,
+                namespace="infrastructure-1",
+                body={
+                    "spec": {
+                        "template": {
+                            "spec": {
+                                "containers": [
+                                    {"name": resource_name, "image": previous_image}
+                                ]
+                            }
+                        }
+                    }
+                }
+                )
+            actions_taken = f"rollback:{resource_name}:to_revision_{previous_revision}:image_{previous_image}"
+            print(f"Rollback successful — {resource_name} now running {previous_image}")
+        except Exception as e:
+            print(f"Failed to rollback deployment {resource_name}: {e}")
+            actions_taken = f"failed_to_rollback:{resource_name}:error_{e}"
+        return {"action_taken": actions_taken, "outcome": "pending"}
+        
+        
     else:
-        print(f"Investigating incident {state['incident_id']}...")
-    return {"action_taken": "restart_pod", "outcome": "pending"}
+            print(f"Unexpected action '{recommended_action}' in auto_remediate — logging only")
+            return {
+                "action_taken": f"unexpected_action:{recommended_action}",
+                "outcome": "pending"
+            }
 
 def log_outcome(state: State)-> dict:
     incident_id = state["incident_id"]

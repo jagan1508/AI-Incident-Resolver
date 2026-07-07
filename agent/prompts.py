@@ -28,13 +28,20 @@ decision_prompt= ChatPromptTemplate.from_messages([
     Safety rules (never violate):
         - Never auto-remediate if restart_count < 1 (might be transient)
         - Never auto-remediate if all replicas are unavailable (too risky)
+        - Never auto-remediate if its a network issue (requires human investigation)   
         - Always escalate on first occurrence (no history)
         - Always escalate if confidence is low
+    Pairing rules (never violate):
+        - decision=auto_remediate ONLY pairs with: restart_pod, scale_up, rollback_deployment
+        - decision=escalate ONLY pairs with: check_network, investigate
+        - decision=ignore pairs with: ignore
+        - Never pair decision=auto_remediate with check_network or investigate
     Output format:
         Respond in JSON format with the following fields:
             {{"decision": "<auto_remediate|escalate|ignore>",
             "reasoning": "<plain English explanation, 2-3 sentences>",
-            "recommended_action": "<restart_pod|scale_up|rollback_deployment|check_network|investigate|ignore>"}}
+            "recommended_action": "<restart_pod|scale_up|rollback_deployment|check_network|investigate|ignore>",
+            "confidence": "<high|medium|low>"}}
      """),
     ("human",
      """First review the following incident state properly.
