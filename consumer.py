@@ -2,6 +2,7 @@ from kafka import KafkaConsumer
 import psycopg2
 import json
 import redis
+from agent.graph import graph
 
 consumer = KafkaConsumer('demo', bootstrap_servers='localhost:9092', value_deserializer=lambda m: json.loads(m.decode('utf-8')))
 
@@ -28,6 +29,31 @@ try:
                     row=cursor.fetchone()
                     if row:
                         event_id=row[0]
+                    print(f"Inserted event into database with ID: {event_id}")
+                    initial_state = {
+                        "incident_id": event_id,
+                        "fingerprint": event["fingerprint"],
+                        "event_type": event["type"],
+                        "resource_name": event["resource"],
+                        "raw_event": event,
+                        "created_at": event["timestamp"],
+                        "is_duplicate": False,
+                        "history": None,
+                        "history_summary": None,
+                        "classification": None,
+                        "decision": None,
+                        "reasoning": None,
+                        "pod_status": None,
+                        "restart_count": None,
+                        "recent_k8s_events": None,
+                        "cluster_summary": None,
+                        "action_taken": None,
+                        "outcome": None,
+                        "confidence": None,
+                        "recommended_action": None
+                    }
+                    graph_result = graph.invoke(initial_state)
+                    print(f"Agent completed: decision={graph_result['decision']}, outcome={graph_result['outcome']}")
                 else:
                     print(f"Duplicate suppressed: {event['fingerprint']}")
 except (Exception, psycopg2.DatabaseError) as error:

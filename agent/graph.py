@@ -8,10 +8,10 @@ from kubernetes import client, config
 import os
 from IPython.display import Image, display
 import requests
-from state import State
+from agent.state import State
 from langchain_core.prompts import ChatPromptTemplate
-from prompts import classification_prompt,decision_prompt
-from output import Category,Decision
+from agent.prompts import classification_prompt,decision_prompt
+from agent.output import Category,Decision
 
 
 load_dotenv()
@@ -425,7 +425,7 @@ graph=builder.compile()
     "action_taken": None,
     "outcome": None
 }"""
-initial_state = {
+"""initial_state = {
     "incident_id": 2,
     "fingerprint": "cpu_spike:payment-svc",
     "event_type": "cpu_spike",
@@ -446,7 +446,7 @@ initial_state = {
     "outcome": None,
     "confidence": None,
     "recommended_action": None
-}
+}"""
 '''initial_state = {
     "incident_id": 99,
     "fingerprint": "pod_crash:checkout-svc",
@@ -516,7 +516,7 @@ initial_state = {
     "recommended_action": "rollback_deployment",   # ← branch being tested
     "pod_statuses": []
 }'''
-result =graph.invoke(initial_state)
+#result =graph.invoke(initial_state)
 #result = auto_remediate(test_scale)
 #a=inspect(initial_state)
 
