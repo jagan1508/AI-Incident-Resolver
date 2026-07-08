@@ -7,6 +7,7 @@ from kubernetes import client, config
 
 import os
 from IPython.display import Image, display
+import requests
 from state import State
 from langchain_core.prompts import ChatPromptTemplate
 from prompts import classification_prompt,decision_prompt
@@ -192,8 +193,45 @@ def decide(state: State) -> dict:
 
 def escalate(state: State)-> dict:  
     print(f"Escalating incident {state['incident_id']} for human intervention.")
-    
-    return {"action_taken": "escalated", "outcome": "pending"}
+    WEBHOOK_URL= os.environ.get("WEBHOOK_URL")
+    message = f"""Incident {state['incident_id']} escalation: requires human intervention.
+            Incident ID  : {state['incident_id']}
+            Fingerprint  : {state['fingerprint']}
+            Resource     : {state['resource_name']}
+            Classification: {state['classification']}
+            Pod Status   : {state['pod_status']}
+            Restart Count: {state['restart_count']}
+            Agent Reasoning: {state['reasoning']}
+            Recommended Action: {state['recommended_action']}
+            Confidence        : {state['confidence']}
+
+            Cluster State:
+            {state['cluster_summary']}
+
+            Recent History:
+            {state['history_summary']}
+
+            To close this incident:
+            POST /incidents/{state['incident_id']}/resolve
+            with body: {{"action_taken": "...", "outcome": "resolved", "notes": "..."}}
+            """.strip()
+    if WEBHOOK_URL:
+        try:
+            response = requests.post(WEBHOOK_URL, json={"text": message})
+            if response.status_code == 200:
+                print(f"Webhook notification sent successfully.")
+                notification_status = "webhook_sent"
+            else:
+                print(f"Webhook returned {response.status_code}")
+                notification_status = f"webhook_failed:{response.status_code}"
+                
+        except Exception as e:
+            print(f"Failed to send webhook notification: {e}")
+            notification_status = f"webhook_error:{e}"
+    else:
+        print("No WEBHOOK_URL configured — logged to console only.")
+        notification_status = "console_only"
+    return {"action_taken": f"escalated:{notification_status} for incident {state['incident_id']}", "outcome": "pending"}
 
 def auto_remediate(state: State)-> dict:
     recommended_action = state["recommended_action"]
@@ -247,6 +285,7 @@ def auto_remediate(state: State)-> dict:
         return {"action_taken": action_taken, "outcome": "pending"}
     elif recommended_action == "rollback_deployment":
         print(f"Rolling back deployment {state['resource_name']}...")
+        resource_name = state["resource_name"]
         try:
             all_rn = apps_v1.list_namespaced_replica_set(namespace="infrastructure-1")
             selected_rn = [
@@ -350,6 +389,42 @@ builder.add_edge("outcome",END)
 graph=builder.compile()
 
 ##For testing
+"""test_scale = {
+    "incident_id": 99,
+    "fingerprint": "cpu_spike:payment-svc",
+    "event_type": "cpu_spike",
+    "resource_name": "payment-svc",
+    "raw_event": {"type": "cpu_spike", "resource": "payment-svc"},
+    "created_at": "2026-07-06 10:00:00",
+    "is_duplicate": False,
+    "history": [],
+    "history_summary": "No past incidents.",
+    "classification": "resource_exhaustion",
+    "decision": "auto_remediate",
+    "reasoning": "CPU spike detected — scaling up to handle load.",
+    "recommended_action": "scale_up",
+    "confidence": "high",
+    "pod_status": "Running",
+    "pod_statuses": [
+        {
+            "name": "payment-svc-5f7cbccd5c-884kq",
+            "phase": "Running",
+            "restarts": 1,
+            "waiting_reason": None
+        },
+        {
+            "name": "payment-svc-5f7cbccd5c-dhl2w",
+            "phase": "Running",
+            "restarts": 1,
+            "waiting_reason": None
+        }
+    ],
+    "restart_count": 2,
+    "recent_k8s_events": [],
+    "cluster_summary": "Deployment: payment-svc | Replicas: 2/2 ready | CPU spike detected",
+    "action_taken": None,
+    "outcome": None
+}"""
 initial_state = {
     "incident_id": 2,
     "fingerprint": "cpu_spike:payment-svc",
@@ -372,6 +447,48 @@ initial_state = {
     "confidence": None,
     "recommended_action": None
 }
+'''initial_state = {
+    "incident_id": 99,
+    "fingerprint": "pod_crash:checkout-svc",
+    "event_type": "pod_crash",
+    "resource_name": "checkout-svc",
+    "raw_event": {"type": "pod_crash", "resource": "checkout-svc"},
+    "created_at": "2026-07-06 10:00:00",
+    "is_duplicate": False,
+    "history": [],
+    "history_summary": "No past incidents.",
+    "classification": "container_failure",
+    "decision": "auto_remediate",
+    "reasoning": "Pod is in ErrImagePull state.",
+    "recommended_action": "restart_pod",
+    "confidence": "high",
+    "pod_status": "ErrImagePull",
+    "pod_statuses": [
+        {
+            "name": "checkout-svc-579dcf7b99-jkmjs",
+            "phase": "Running",
+            "restarts": 1,
+            "waiting_reason": None          # healthy — should NOT be restarted
+        },
+        {
+            "name": "checkout-svc-579dcf7b99-x8zjk",
+            "phase": "Running",
+            "restarts": 1,
+            "waiting_reason": None          # healthy — should NOT be restarted
+        },
+        {
+            "name": "checkout-svc-85984d68b-sb9gn",
+            "phase": "Pending",
+            "restarts": 0,
+            "waiting_reason": "ErrImagePull"  # unhealthy — ONLY this one restarted
+        }
+    ],
+    "restart_count": 2,
+    "recent_k8s_events": [],
+    "cluster_summary": "Deployment: checkout-svc | Replicas: 2/3 ready | 1 pod ErrImagePull",
+    "action_taken": None,
+    "outcome": None
+}'''
 """initial_state = {
     "incident_id": 2,
     "fingerprint": "pod_crash:checkout-svc",
@@ -393,7 +510,14 @@ initial_state = {
     "outcome": None,
     "confidence": None,
     "recommended_action": None}"""
+'''test_rollback = {
+    **initial_state,
+    "resource_name": "checkout-svc",
+    "recommended_action": "rollback_deployment",   # ← branch being tested
+    "pod_statuses": []
+}'''
 result =graph.invoke(initial_state)
+#result = auto_remediate(test_scale)
 #a=inspect(initial_state)
 
 ##Visualize the graph
