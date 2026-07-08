@@ -28,7 +28,7 @@ def classify(state: State)-> dict:
     return {"classification": result.category}
 
 def get_history(state: State) -> dict:
-    print(state)
+    #print(state)
     fingerprint=state["fingerprint"]
     classification=state["classification"] ##to use this in select query to filter by classification as well
     with psycopg2.connect(host="localhost",database="incident_db", user="postgres" , password="password") as conn:
@@ -52,9 +52,9 @@ def get_history(state: State) -> dict:
             f"action={row[5]}, "
             f"outcome={row[6]}"
             )
-        lines.append(line)
+            lines.append(line)
         history_summary=f"There are {len(rows)} past incidents found:\n"+"\n".join(lines)
-        ##print(history_summary)
+       # print(history_summary)
         
     
     return {"history": rows, "history_summary": history_summary}
@@ -165,11 +165,13 @@ def inspect(state: State) -> dict:
     return {"pod_statuses": pod_statuses, "pod_status": pod_status, "restart_count": total_restarts, "recent_k8s_events": recent_events, "cluster_summary": cluster_summary}
 
 def decide(state: State) -> dict:
-    print("--------------------------")
-    print(state['pod_statuses'])
+    #print("--------------------------")
+    #print(state['pod_statuses'])
     model=ChatGroq(model="llama-3.3-70b-versatile",temperature=0)
     structured_model=model.with_structured_output(Decision)
     chain = decision_prompt | structured_model
+    print("*"*50)
+    print(f"Invoking decision chain with state: {state}")
     result=chain.invoke({
         "event": state["raw_event"],
         "classification": state["classification"],
@@ -179,11 +181,12 @@ def decide(state: State) -> dict:
         "restart_count": state["restart_count"],
         "recent_k8s_events": state["recent_k8s_events"]
     })
-    """print("--------------------------")
+    print("--------------------------")
     print(f"Decision: {result.decision}")
     print(f"Reasoning: {result.reasoning}")
     print(f"Recommended Action: {result.recommended_action}")
-    print(f"Confidence: {result.confidence}")"""
+    print(f"Confidence: {result.confidence}")
+    print("*"*50)
     return {
         "decision": result.decision,
         "reasoning": result.reasoning,
@@ -248,7 +251,8 @@ def auto_remediate(state: State)-> dict:
         if not unhealthy_pods:
             return {
                 "action_taken": "no_action_self_healed",
-                "outcome": "resolved"
+                "outcome": "resolved",
+                "notes": "All pods are healthy — no restart needed as it self-healed."
             }
         actions=[]
         for pod in unhealthy_pods:
@@ -346,7 +350,9 @@ def log_outcome(state: State)-> dict:
     reasoning = state["reasoning"]
     action_taken = state["action_taken"]
     outcome = state["outcome"]
+    print(f"="*50)
     print(f"Logging outcome: {state['decision']} - {state['outcome']}")
+    print(f"="*50)
     with psycopg2.connect(host="localhost",database="incident_db", user="postgres" , password="password") as conn:
             with conn.cursor() as cursor:
                 cursor.execute("UPDATE incidents SET\

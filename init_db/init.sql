@@ -9,5 +9,7 @@ CREATE TABLE IF NOT EXISTS incidents (
     decision TEXT,
     reasoning TEXT,
     actions_taken TEXT,
-    outcome TEXT
+    outcome TEXT,
+    resolved_at TIMESTAMPTZ,
+    notes TEXT
 );
