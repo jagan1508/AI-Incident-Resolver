@@ -12,12 +12,41 @@ from agent.state import State
 from langchain_core.prompts import ChatPromptTemplate
 from agent.prompts import classification_prompt,decision_prompt
 from agent.output import Category,Decision
+import time
 
 
 load_dotenv()
 
 
 from langgraph.graph import START, END, StateGraph
+
+def verify_remidiation(resource_name: str,expected_replicas: int, timeout: int = 60) -> tuple[str,str]:
+    config.load_kube_config()
+    core_v1 = client.CoreV1Api()
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        try:
+            pods=core_v1.list_namespaced_pod(
+                namespace="infrastructure-1",
+                label_selector=f"name={resource_name}"
+            )
+            phases = [p.status.phase for p in pods.items]
+            running_count = phases.count("Running")
+            if running_count >= expected_replicas:
+                return "resolved", f"Verified: All {running_count}/{len(phases)} pods are running after remediation. Auto-resolved."
+            print(f"Waiting for pods to recover... {running_count}/{expected_replicas} Running")
+            time.sleep(10)
+        except Exception as e:
+            print(f"Error while verifying remediation: {e}")
+            time.sleep(10)
+    return (
+        "failed",
+        f"Verification timed out after {timeout}s — pods did not recover. Manual investigation required."
+    )
+
+            
+    
+    
 
 def classify(state: State)-> dict:
     model=ChatGroq(model="qwen/qwen3.6-27b",temperature=0)
@@ -36,8 +65,11 @@ def get_history(state: State) -> dict:
             cursor.execute("SELECT id, event_type, classification, decision, reasoning, actions_taken, outcome, created_at\
                             FROM incidents\
                             WHERE fingerprint = %s\
+                            AND id != %s\
+                            AND classification = %s\
+                            AND outcome IS NOT NULL\
                             ORDER BY created_at DESC\
-                            LIMIT 5;",(fingerprint,))##need to add another check with where for classification as i passed it for testing initially now
+                            LIMIT 5;",(fingerprint,state["incident_id"],classification))##need to add another check with where for classification as i passed it for testing initially now
             rows=cursor.fetchall()
     if rows==[]:
         history_summary="No past incidents found for this fingerprint in the same category."
@@ -265,14 +297,18 @@ def auto_remediate(state: State)-> dict:
                     grace_period_seconds=0
                 )
                 action_taken = f"restarted {len(unhealthy_pods)} unhealthy pod(s): {[p['name'] for p in unhealthy_pods]}"
+                outcome,notes = verify_remidiation(state["resource_name"], expected_replicas=len(pod_statuses))
                 print(f"Pod {pod_name} restarted successfully.")
             except Exception as e:
                 print(f"Failed to restart pod {pod_name}: {e}")
                 action_taken = f"failed to restart pod {pod_name}: {e}"
+                outcome = "failed"
+                notes = "Pod restart not executed due to error"
             actions.append(action_taken)
         return {
             "action_taken": ", ".join(actions),
-            "outcome": "pending"
+            "outcome": outcome,
+            "notes": notes
         }    
     elif recommended_action == "scale_up":
         print(f"Scaling up deployment {state['resource_name']}...")
@@ -283,10 +319,13 @@ def auto_remediate(state: State)-> dict:
                                                     body={"spec": {"replicas": replicas + 1}})
             print(f"Deployment {resource_name} scaled up successfully.")
             action_taken = f"scaled up deployment {resource_name} from {replicas} to {replicas + 1} replicas"
+            outcome,notes = verify_remidiation(resource_name, expected_replicas=replicas + 1)
         except Exception as e:
             print(f"Failed to scale up deployment {resource_name}: {e}")
             action_taken = f"failed to scale up deployment {resource_name}: {e}"
-        return {"action_taken": action_taken, "outcome": "pending"}
+            outcome = "failed"
+            notes = "Scale up not executed due to error"
+        return {"action_taken": action_taken, "outcome": outcome, "notes": notes}
     elif recommended_action == "rollback_deployment":
         print(f"Rolling back deployment {state['resource_name']}...")
         resource_name = state["resource_name"]
@@ -329,11 +368,14 @@ def auto_remediate(state: State)-> dict:
                 }
                 )
             actions_taken = f"rollback:{resource_name}:to_revision_{previous_revision}:image_{previous_image}"
+            outcome,notes = verify_remidiation(resource_name, expected_replicas=previous_rs.spec.replicas)
             print(f"Rollback successful — {resource_name} now running {previous_image}")
         except Exception as e:
             print(f"Failed to rollback deployment {resource_name}: {e}")
             actions_taken = f"failed_to_rollback:{resource_name}:error_{e}"
-        return {"action_taken": actions_taken, "outcome": "pending"}
+            outcome = "failed"
+            notes = "Rollback not executed due to error"
+        return {"action_taken": actions_taken, "outcome": outcome,"notes":notes}
         
         
     else:
@@ -350,6 +392,7 @@ def log_outcome(state: State)-> dict:
     reasoning = state["reasoning"]
     action_taken = state["action_taken"]
     outcome = state["outcome"]
+    notes = state.get("notes") or ""
     print(f"="*50)
     print(f"Logging outcome: {state['decision']} - {state['outcome']}")
     print(f"="*50)
@@ -360,9 +403,10 @@ def log_outcome(state: State)-> dict:
                                 decision = %s,\
                                 reasoning = %s,\
                                 actions_taken = %s,\
-                                outcome = %s\
+                                outcome = %s,\
+                                notes = %s\
                                 WHERE id = %s",
-                                (classification, decision, reasoning, action_taken, outcome, incident_id))
+                                (classification, decision, reasoning, action_taken, outcome, notes, incident_id))
                 conn.commit()
     print(f"Outcome logged for incident {incident_id}: decision={decision}, reasoning={reasoning}, action_taken={action_taken}, outcome={outcome}")
     return {} 

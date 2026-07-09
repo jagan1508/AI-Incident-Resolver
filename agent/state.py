@@ -29,6 +29,7 @@ class State(TypedDict):
     
     action_taken: Optional[str]
     outcome: Optional[str]
+    notes: Optional[str]
 
     
     
