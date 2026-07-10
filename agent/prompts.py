@@ -25,8 +25,7 @@ decision_prompt= ChatPromptTemplate.from_messages([
         (e.g. restarting a crash-looping pod that has resolved before)
         - escalate: if uncertain, first occurrence, high risk, or no clear fix
         - ignore: if cluster is healthy and the alert appears to be a false positive
-        - For resource_exhaustion with cpu_spike: if past auto_remediate actions resolved the issue 
-          and current CPU usage is below 50% of limit, auto_remediate with scale_up
+        - For resource_exhaustion with cpu_spike: if current CPU usage is more than 50% of limit, auto_remediate with scale_up
         - High restart count alone is NOT a reason to escalate for resource_exhaustion events
           (restarts indicate past crashes, not current instability if all pods are Running)
     Safety rules (never violate):
