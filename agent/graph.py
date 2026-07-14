@@ -60,7 +60,7 @@ def get_history(state: State) -> dict:
     #print(state)
     fingerprint=state["fingerprint"]
     classification=state["classification"] ##to use this in select query to filter by classification as well
-    with psycopg2.connect(host="localhost",database="incident_db", user="postgres" , password="password") as conn:
+    with psycopg2.connect(host="postgres",database="incident_db", user="postgres" , password="password") as conn:
         with conn.cursor() as cursor:
             cursor.execute("SELECT id, event_type, classification, decision, reasoning, actions_taken, outcome, created_at\
                             FROM incidents\
@@ -92,7 +92,19 @@ def get_history(state: State) -> dict:
     return {"history": rows, "history_summary": history_summary}
 
 def inspect(state: State) -> dict:
-    config.load_kube_config()
+    try:
+        config.load_incluster_config()
+    except config.ConfigException:
+        try:
+            config.load_kube_config()
+        except config.ConfigException:
+            return {
+                "pod_status": "unknown",
+                "pod_statuses": [],
+                "restart_count": 0,
+                "recent_k8s_events": [],
+                "cluster_summary": "k8s cluster unreachable — kubeconfig not found. Cluster inspection skipped."
+            }
     apps_v1 = client.AppsV1Api()
     core_v1 = client.CoreV1Api()
     custom_api = client.CustomObjectsApi()
@@ -396,7 +408,7 @@ def log_outcome(state: State)-> dict:
     print(f"="*50)
     print(f"Logging outcome: {state['decision']} - {state['outcome']}")
     print(f"="*50)
-    with psycopg2.connect(host="localhost",database="incident_db", user="postgres" , password="password") as conn:
+    with psycopg2.connect(host="postgres",database="incident_db", user="postgres" , password="password") as conn:
             with conn.cursor() as cursor:
                 cursor.execute("UPDATE incidents SET\
                                 classification = %s,\

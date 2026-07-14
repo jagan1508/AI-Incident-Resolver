@@ -49,6 +49,20 @@ services:
     environment:
       - REDIS_ARGS=--requirepass password --appendonly yes
     restart: unless-stopped
+  
+  agent:
+    image: inc-agent:latest
+    container_name: inc-agent
+    ports:
+      - 8001:8001
+    restart: always 
+  
+  api:
+    image: inc-agent-api:latest
+    container_name: inc-agent-api
+    ports:
+      - 8000:8000
+    restart: always
 
     
 

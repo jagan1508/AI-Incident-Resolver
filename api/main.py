@@ -11,7 +11,7 @@ class Incident(BaseModel):
     notes: str
     
 def get_db_connection():
-    conn=psycopg2.connect(host="localhost",database="incident_db", user="postgres" , password="password")
+    conn=psycopg2.connect(host="postgres",database="incident_db", user="postgres" , password="password")
     return conn
         
 
