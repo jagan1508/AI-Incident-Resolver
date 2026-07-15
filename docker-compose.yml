@@ -63,8 +63,11 @@ services:
     ports:
       - 8000:8000
     restart: always
-
-    
+  
+  consumer:
+    image: inc-agent-consumer:latest
+    container_name: consumer
+    restart: always
 
 volumes:
   postgres_data:

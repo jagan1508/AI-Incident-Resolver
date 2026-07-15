@@ -2,22 +2,21 @@ from kafka import KafkaConsumer
 import psycopg2
 import json
 import redis
-from agent.graph import graph
 import requests
 import os
-AGENT_URL = os.environ.get("AGENT_URL", "http://localhost:8001")
+AGENT_URL = os.environ.get("AGENT_URL", "http://agent:8001")
 
 
-consumer = KafkaConsumer('demo', bootstrap_servers='localhost:9092', value_deserializer=lambda m: json.loads(m.decode('utf-8')))
+consumer = KafkaConsumer('demo', bootstrap_servers='kafka:9093', value_deserializer=lambda m: json.loads(m.decode('utf-8')))
 
 
 
-r = redis.Redis(host='localhost', port=6379, decode_responses=True)
+r = redis.Redis(host='redis', port=6379, decode_responses=True)
 
 
 try:
     with psycopg2.connect(
-        host="localhost",
+        host="postgres",
         database="incident_db", user="postgres" , password="password") as conn:
         with conn.cursor() as cursor:
             for message in consumer:
@@ -57,9 +56,17 @@ try:
                         "recommended_action": None
                     }'''
                     #graph_result = graph.invoke(initial_state)
-                    request=requests.post(f"{AGENT_URL}/agent")
-                    result=request.json()
-                    print(f"Agent completed: decision={result['decision']}, outcome={result['outcome']}")
+                    payload = {
+                        "incident_id": event_id,
+                        "fingerprint": event["fingerprint"],
+                        "event_type": event["type"],
+                        "resource_name": event["resource"],
+                        "raw_event": event,
+                        "created_at": str(event["timestamp"])
+                        }
+                    print(f"Sending to agent: {payload}")
+                    result=requests.post(f"{AGENT_URL}/agent",json=payload)
+                    print(f"Agent completed: status code={result.status_code}, outcome={result.text}")
                 else:
                     print(f"Duplicate suppressed: {event['fingerprint']}")
 except (Exception, psycopg2.DatabaseError) as error:

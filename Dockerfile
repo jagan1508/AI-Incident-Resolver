@@ -4,4 +4,4 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY consumer.py ./consumer/
 COPY .env .
-CMD ["python","consumer/consumer.py"]
+CMD ["python","-u","consumer/consumer.py"]
