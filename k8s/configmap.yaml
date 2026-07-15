@@ -1,0 +1,13 @@
+kind: apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: opsagent-config
+  namespace: opsagent
+data:
+  PG_HOST: "postgres-service"
+  PG_DB: "incident_db"
+  PG_USER: "postgres"
+  KAFKA_BOOTSTRAP_SERVERS: "kafka-service:9093"
+  REDIS_HOST: "redis-service"
+  REDIS_PORT: "6379"
+  AGENT_URL: "http://agent-service:8001"

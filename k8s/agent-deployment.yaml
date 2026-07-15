@@ -1,0 +1,34 @@
+kind: apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent
+  namespace: ops-agent
+  labels:  
+spec:
+  selector:
+    matchLabels:
+      app: agent
+  replicas: 1
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: agent 
+    spec:
+      restartPolicy: Always
+      containers:
+      - name:  
+        image:  jaganath1508/ops-agent:latest
+        resources:
+          requests:
+            cpu: 100m
+            memory: 100Mi
+          limits:
+            cpu: 100m
+            memory: 100Mi
+        ports:
+        - containerPort:  8001
