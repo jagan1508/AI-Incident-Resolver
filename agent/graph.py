@@ -60,7 +60,10 @@ def get_history(state: State) -> dict:
     #print(state)
     fingerprint=state["fingerprint"]
     classification=state["classification"] ##to use this in select query to filter by classification as well
-    with psycopg2.connect(host="postgres",database="incident_db", user="postgres" , password="password") as conn:
+    with psycopg2.connect(host=os.environ.get("PG_HOST", "postgres"),
+                        database=os.environ.get("PG_DB", "incident_db"),
+                        user=os.environ.get("PG_USER", "postgres"),
+                        password=os.environ.get("PG_PASSWORD", "password")) as conn:
         with conn.cursor() as cursor:
             cursor.execute("SELECT id, event_type, classification, decision, reasoning, actions_taken, outcome, created_at\
                             FROM incidents\
@@ -408,7 +411,10 @@ def log_outcome(state: State)-> dict:
     print(f"="*50)
     print(f"Logging outcome: {state['decision']} - {state['outcome']}")
     print(f"="*50)
-    with psycopg2.connect(host="postgres",database="incident_db", user="postgres" , password="password") as conn:
+    with psycopg2.connect(host=os.environ.get("PG_HOST", "postgres"),
+                        database=os.environ.get("PG_DB", "incident_db"),
+                        user=os.environ.get("PG_USER", "postgres"),
+                        password=os.environ.get("PG_PASSWORD", "password")) as conn:
             with conn.cursor() as cursor:
                 cursor.execute("UPDATE incidents SET\
                                 classification = %s,\

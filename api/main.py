@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import psycopg2
+import os
 
 
 app = FastAPI()
@@ -11,7 +12,10 @@ class Incident(BaseModel):
     notes: str
     
 def get_db_connection():
-    conn=psycopg2.connect(host="postgres",database="incident_db", user="postgres" , password="password")
+    conn=psycopg2.connect(host=os.environ.get("PG_HOST", "postgres"),
+                        database=os.environ.get("PG_DB", "incident_db"),
+                        user=os.environ.get("PG_USER", "postgres"),
+                        password=os.environ.get("PG_PASSWORD", "password"))
     return conn
         
 

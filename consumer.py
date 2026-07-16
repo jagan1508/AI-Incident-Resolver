@@ -7,17 +7,18 @@ import os
 AGENT_URL = os.environ.get("AGENT_URL", "http://agent:8001")
 
 
-consumer = KafkaConsumer('demo', bootstrap_servers='kafka:9093', value_deserializer=lambda m: json.loads(m.decode('utf-8')))
+consumer = KafkaConsumer('demo', bootstrap_servers=os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "kafka:9093"), value_deserializer=lambda m: json.loads(m.decode('utf-8')))
 
 
 
-r = redis.Redis(host='redis', port=6379, decode_responses=True)
+r = redis.Redis(host=os.environ.get("REDIS_HOST", "redis"), port=int(os.environ.get("REDIS_PORT", 6379)), decode_responses=True)
 
 
 try:
-    with psycopg2.connect(
-        host="postgres",
-        database="incident_db", user="postgres" , password="password") as conn:
+    with psycopg2.connect(host=os.environ.get("PG_HOST", "postgres"),
+                        database=os.environ.get("PG_DB", "incident_db"),
+                        user=os.environ.get("PG_USER", "postgres"),
+                        password=os.environ.get("PG_PASSWORD", "password")) as conn:
         with conn.cursor() as cursor:
             for message in consumer:
                 event = message.value
