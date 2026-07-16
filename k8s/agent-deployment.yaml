@@ -2,7 +2,7 @@ kind: apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: agent
-  namespace: ops-agent
+  namespace: opsagent
   labels:  
 spec:
   selector:
@@ -19,6 +19,10 @@ spec:
       labels:
         app: agent 
     spec:
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name:  name
       restartPolicy: Always
       containers:
       - name:  
