@@ -1,38 +1,46 @@
-kind: apiVersion: apps/v1
+apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: agent
   namespace: opsagent
-  labels:  
 spec:
+  replicas: 1
   selector:
     matchLabels:
       app: agent
-  replicas: 1
-  strategy:
-    rollingUpdate:
-      maxSurge: 25%
-      maxUnavailable: 25%
-    type: RollingUpdate
   template:
     metadata:
       labels:
-        app: agent 
+        app: agent
     spec:
-      apiVersion: v1
-      kind: ServiceAccount
-      metadata:
-        name:  name
-      restartPolicy: Always
-      containers:
-      - name:  
-        image:  jaganath1508/ops-agent:latest
-        resources:
-          requests:
-            cpu: 100m
-            memory: 100Mi
-          limits:
-            cpu: 100m
-            memory: 100Mi
-        ports:
-        - containerPort:  8001
+      serviceAccountName: agent-service-account
+      containers: 
+        - image: jaganath1508/ops-agent:latest
+          name:  agent
+          ports:
+            - containerPort: 8001
+          envFrom:
+            - configMapRef:
+                name: opsagent-config
+            - secretRef:
+                name: opsagent-secret
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent-svc
+  namespace: opsagent
+spec:
+  selector:
+    app: agent
+  type: ClusterIP
+  ports:
+    - port:  8001
+      targetPort:  8001
