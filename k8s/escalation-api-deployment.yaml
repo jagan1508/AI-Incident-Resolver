@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: escalate-agent-api
+  namespace: opsagent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: escalate-api
+  template:
+    metadata:
+      labels:
+        app: escalate-api
+    spec:
+      containers:
+      - name: escalate-consumer-api
+        image: jaganath1508/ops-agent-api:latest
+        ports:
+          - containerPort: 8000
+        envFrom:
+          - configMapRef:
+              name: opsagent-config
+          - secretRef:
+              name: opsagent-secret
+        resources:
+          requests:
+            cpu: "200m"
+            memory: "256Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: escalate-service
+  namespace: opsagent
+spec:
+  selector:
+    app: escalate-api
+  type: NodePort
+  ports:
+    - port:  8000
+      targetPort:  8000
