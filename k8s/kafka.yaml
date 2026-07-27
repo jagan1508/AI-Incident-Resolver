@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka
+  namespace: opsagent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka
+  template:
+    metadata:
+      labels:
+        app: kafka
+    spec:
+      containers:
+      - name: kafka
+        image: apache/kafka:latest
+        ports:
+          - containerPort: 9092
+            name: client
+          - containerPort: 9091
+            name: controller
+          - containerPort: 30092
+            name: external
+        envFrom:
+          - configMapRef:
+              name: kafka-config
+        resources:
+          requests:
+            cpu: "200m"
+            memory: "256Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-service
+  namespace: opsagent
+spec:
+  selector:
+    app: kafka
+  type: NodePort
+  ports:
+    - port:  9092
+      targetPort:  9092
+      name: client
+    - port: 30092
+      targetPort: 30092
+      nodePort: 30092
+      name: external
+

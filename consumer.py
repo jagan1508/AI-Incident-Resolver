@@ -4,10 +4,11 @@ import json
 import redis
 import requests
 import os
-AGENT_URL = os.environ.get("AGENT_URL", "http://agent:8001")
+AGENT_URL = os.environ.get("AGENT_URL", "http://agent-service:8001")
 
 
-consumer = KafkaConsumer('demo', bootstrap_servers=os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "kafka:9093"), value_deserializer=lambda m: json.loads(m.decode('utf-8')))
+print(os.environ.get("KAFKA_BOOTSTRAP_SERVERS"))
+consumer = KafkaConsumer('demo', bootstrap_servers=os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "kafka-service:9092"), value_deserializer=lambda m: json.loads(m.decode('utf-8')))
 
 
 

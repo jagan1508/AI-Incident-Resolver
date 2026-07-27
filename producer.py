@@ -8,7 +8,7 @@ events = [
     {"type": "cpu_spike", "resource": "payment-svc", "fingerprint": "cpu_spike:payment-svc"},
 ]
 
-producer = KafkaProducer(bootstrap_servers='localhost:9092',value_serializer=lambda v: json.dumps(v).encode('utf-8'))
+producer = KafkaProducer(bootstrap_servers='192.168.49.2:30092',value_serializer=lambda v: json.dumps(v).encode('utf-8'))
 for event in events:
     event["timestamp"] = time.ctime(time.time())
     producer.send('demo', event)
